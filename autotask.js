@@ -2,7 +2,7 @@ const Web3 = require('web3');
 const axios = require('axios');
 
 // Define the base URL for your API
-const baseURL = 'http://localhost:3000'; // Replace with your API's actual base URL
+const baseURL = 'swapverse-lottery-bot-production.up.railway.app'; // Replace with your API's actual base URL
 
 // Function to add a wallet address to a lottery
 async function addWalletToLottery(IdNumber, address) {
@@ -125,42 +125,52 @@ const LotteryAbiWeekly =[
     // ... (other contract functions)
   ]
   
-function selectRandomWinners(participants, numWinners) {
+  function selectRandomWinners(participants, numWinners) {
     const shuffled = participants.sort(() => 0.5 - Math.random());
     return shuffled.slice(0, numWinners);
-}
- 
-exports.handler = async function (event) {
-    const web3 = new Web3(new Web3.providers.HttpProvider('https://eth-goerli.g.alchemy.com/v2/CFKeOAiXYkjT6o-18rkEdSClaM6zdPYl'));
+  }
+  
+  exports.handler = async function (event) {
+    const web3 = new Web3('https://eth-goerli.g.alchemy.com/v2/CFKeOAiXYkjT6o-18rkEdSClaM6zdPYl');
     const LOTTERY_CONTRACT = new web3.eth.Contract(LotteryAbiWeekly, CONTRACT_ADDRESS);
-
-  // Select three random winners from the array
+    const lotteryId = await LOTTERY_CONTRACT.methods.currentLotteryId().call();
+    const participants = await getWalletsForLottery(lotteryId);
+  
+    if (participants.length < 3) {
+      console.error('Not enough participants to select winners.');
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ message: "Not enough participants to select winners." }),
+      };
+    }
+  
+    // Select three random winners from the array
     const randomWinners = selectRandomWinners(participants, 3);
-
+  
     const nonce = await web3.eth.getTransactionCount(PUBLIC_KEY, 'latest');
     const gasEstimate = await LOTTERY_CONTRACT.methods.distributePrizes(randomWinners).estimateGas({ from: PUBLIC_KEY });
-
+  
     const tx = {
-        from: PUBLIC_KEY,
-        to: CONTRACT_ADDRESS,
-        nonce: nonce,
-        gas: gasEstimate,
-        data: LOTTERY_CONTRACT.methods.distributePrizes(randomWinners).encodeABI(),
+      from: PUBLIC_KEY,
+      to: CONTRACT_ADDRESS,
+      nonce: nonce,
+      gas: gasEstimate,
+      data: LOTTERY_CONTRACT.methods.distributePrizes(randomWinners).encodeABI(),
     };
     const signPromise = await web3.eth.accounts.signTransaction(tx, PRIVATE_KEY);
-
+  
     try {
-        const receipt = await web3.eth.sendSignedTransaction(signPromise.rawTransaction);
-        console.log("Winner selection transaction hash:", receipt.transactionHash);
-        return {
-            statusCode: 200,
-            body: JSON.stringify({ message: "Winner selection completed." }),
-        };
+      const receipt = await web3.eth.sendSignedTransaction(signPromise.rawTransaction);
+      console.log("Winner selection transaction hash:", receipt.transactionHash);
+      return {
+        statusCode: 200,
+        body: JSON.stringify({ message: "Winner selection completed." }),
+      };
     } catch (error) {
-        console.error("Error selecting winner:", error);
-        return {
-            statusCode: 500,
-            body: JSON.stringify({ message: "Error selecting winner." }),
-        };
+      console.error("Error selecting winner:", error.message);
+      return {
+        statusCode: 500,
+        body: JSON.stringify({ message: "Error selecting winner." }),
+      };
     }
-};
+  };
